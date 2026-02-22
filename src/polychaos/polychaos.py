@@ -161,7 +161,7 @@ class PolyChaosExpansion():
             for p, sn in zip(self.polynomials, sq_norms)
         ]).reshape(-1, 1)
 
-    def predict(self, x: npt.NDArray) -> np.ndarray:
+    def predict(self, x: npt.NDArray) -> npt.NDArray:
         """Make predictions.
 
         Parameters
@@ -219,7 +219,7 @@ class PolyChaosExpansion():
         """
         return np.sqrt(self.get_var())
 
-    def _build_basis(self, x: npt.NDArray) -> np.ndarray:
+    def _build_basis(self, x: npt.NDArray) -> npt.NDArray:
         """
         Parameters
         ----------
