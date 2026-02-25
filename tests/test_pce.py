@@ -5,31 +5,64 @@ from numpy.testing import assert_allclose
 from polychaos import PolyChaosExpansion
 
 @pytest.fixture
-def cubic_test():
-    """Cubic polynomial."""
-    return lambda x: 1.0 + 2.0 * x - 0.5 * x**2 + 0.1 * x**3
+def nd_poly_test():
+    """2D polynomial of total degree 3."""
+    # f(x1, x2) = 1.0 + 2.0*x1 - 0.5*x2^2 + 0.1*x1*(x2^2)
+    return lambda x: (
+        1.0 + 2.0 * x[:, 0] - 0.5 * x[:, 1]**2 + 0.1 * x[:, 0] * x[:, 1]**2
+    ).reshape(-1, 1)
 
 # Test PCE --------------------------------------------------------------------
 
 @pytest.mark.parametrize("dist, support, moments", [
-    ("uniform", [-3.0, 3.0], None),
-    ("gaussian", [-np.inf, np.inf], [0.0, 1.0])
+    ("uniform", [[-3.0, -2.0], [3.0, 2.0]], None),
+    ("gaussian", [[-np.inf, -np.inf], [np.inf, np.inf]], [[0.0, 1.0], [1.0, 2.0]])
 ])
-def test_regression_perfect_fit(cubic_test, dist, support, moments):
-    """Test if PCE perfectly fits a polynomial of degree <= PCE degree."""
+def test_regression_perfect_fit_nd(nd_poly_test, dist, support, moments):
+    """Test if PCE perfectly fits a 2D polynomial of degree <= PCE degree."""
+    
+    dim = len(support[0])
+    n_samples = 200
 
     if dist == "uniform":
-        xobs = np.random.uniform(support[0], support[1], size=(100, 1))
+        xobs = np.random.uniform(support[0], support[1], size=(n_samples, dim))
     else:
-        xobs = np.random.normal(moments[0], moments[1], size=(100, 1))
+        xobs = np.random.normal(moments[0], np.sqrt(moments[1]), size=(n_samples, dim))
 
-    yobs = cubic_test(xobs)
+    yobs = nd_poly_test(xobs)
 
-    # deg > 3 so should be perfect fit
+    # Polynomial total degree = 3 => `deg=4`` should be a perfect fit
     pce = PolyChaosExpansion(
-        distribution=dist, support=support, deg=5, moments=moments
+        distribution=dist, support=support, deg=4, moments=moments
     )
     pce.regression(xobs, yobs)
+    y_pred = pce.predict(xobs)
+
+    assert_allclose(y_pred, yobs, atol=1e-10)
+    
+@pytest.mark.parametrize("dist, support, moments", [
+    ("uniform", [[-3.0, -2.0], [3.0, 2.0]], None),
+    ("gaussian", [[-np.inf, -np.inf], [np.inf, np.inf]], [[0.0, 1.0], [1.0, 2.0]])
+])
+def test_collocation_perfect_fit_nd(nd_poly_test, dist, support, moments):
+    """Test if PCE perfectly fits a 2D polynomial using collocation."""
+    
+    dim = len(support[0])
+    n_samples = 100
+
+    if dist == "uniform":
+        xobs = np.random.uniform(support[0], support[1], size=(n_samples, dim))
+    else:
+        xobs = np.random.normal(moments[0], np.sqrt(moments[1]), size=(n_samples, dim))
+
+    yobs = nd_poly_test(xobs)
+
+    pce = PolyChaosExpansion(
+        distribution=dist, support=support, deg=4, moments=moments
+    )
+    
+    # n=5 provides enough quadrature points per dimension for degree 4
+    pce.collocation(nd_poly_test, "gauss", 5)
     y_pred = pce.predict(xobs)
 
     assert_allclose(y_pred, yobs, atol=1e-10)
@@ -39,27 +72,30 @@ def test_regression_perfect_fit(cubic_test, dist, support, moments):
 def test_support_bounds_raises_error():
     """Test that reversed bounds trigger an error."""
     with pytest.raises(ValueError, match="Bounds should be strictly increasing."):
-        PolyChaosExpansion("uniform", [1, -1], deg=5)
+        PolyChaosExpansion("uniform", [[1], [-1]], deg=5)
 
 def test_invalid_degree_raises_error():
     """Test that invalid polynomial degree triggers an error."""
     with pytest.raises(ValueError, match="Invalid polynomial degree"):
-        PolyChaosExpansion("uniform", [-1, 1], deg=0)
+        PolyChaosExpansion("uniform", [[-1], [1]], deg=0)
         
 def test_invalid_distribution_raises_error():
     """Test that invalid distribution triggers an error."""
     with pytest.raises(ValueError, match="Invalid distribution"):
-        PolyChaosExpansion("invalid", [-1, 1], deg=5)
+        PolyChaosExpansion("invalid", [[-1], [1]], deg=5)
 
 def test_collocation_raises_error():
     """Test collocation errors."""
-    pce = PolyChaosExpansion("gaussian", [-1, 1], deg=5)
+    pce = PolyChaosExpansion("gaussian", [[-1], [1]], deg=5)
 
     with pytest.raises(NotImplementedError):
-        pce.collocation(cubic_test, "monte carlo", 10)
+        pce.collocation(nd_poly_test, "monte carlo", 10)
+
+    with pytest.raises(ValueError, match="`n` should be > 0."):
+        pce.collocation(nd_poly_test, "gauss", 0)
 
     with pytest.raises(ValueError, match="Invalid integration method"):
-        pce.collocation(cubic_test, "invalid", 10)
+        pce.collocation(nd_poly_test, "invalid", 10)
 
     with pytest.raises(ValueError, match="Moments must be provided for Gaussian collocation."):
-        pce.collocation(cubic_test, "gauss", 10)
+        pce.collocation(nd_poly_test, "gauss", 10)
