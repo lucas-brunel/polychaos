@@ -84,6 +84,17 @@ def test_invalid_distribution_raises_error():
     with pytest.raises(ValueError, match="Invalid distribution"):
         PolyChaosExpansion("invalid", [[-1], [1]], deg=5)
 
+def test_invalid_truncation_raises_error():
+    """Test that invalid truncation scheme triggers an error."""
+    with pytest.raises(ValueError, match="Invalid truncation method"):
+        PolyChaosExpansion("uniform", [[-1], [1]], deg=5, truncation="invalid")
+
+def test_invalid_q_raises_error():
+    """Test that invalid q triggers an error."""
+    with pytest.raises(ValueError, match="q must be such that 0 < q ≤ 1."):
+        PolyChaosExpansion(
+            "uniform", [[-1], [1]], deg=5, truncation="hyperbolic", q=0.0)
+
 def test_collocation_raises_error():
     """Test collocation errors."""
     pce = PolyChaosExpansion("gaussian", [[-1], [1]], deg=5)
