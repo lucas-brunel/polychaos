@@ -8,7 +8,7 @@ from scipy.special import hermitenorm, legendre
 from scipy.linalg import lstsq
 
 class PolyChaosExpansion():
-    """Polynomial Chaos Expansion [1]_.
+    """Polynomial Chaos Expansion [1]_ ,[2]_.
 
     Parameters
     ----------
@@ -16,19 +16,24 @@ class PolyChaosExpansion():
         Input distribution, either `"uniform"`, `"gaussian"`
         (or `"normal"`).
 
-    support : array_like(2, dim)
+    support : array_like of shape (2, dim)
         Support of the input random variables.
 
     deg : int
         Truncation degree of the polynomial basis. Must be > 0.
 
-    moments : array_like(2, dim), optional
+    moments : array_like of shape (2, dim), optional
         Default: `moments=None`. Mean and variance of the input if known,
         otherwise they are estimated from data. Required for the collocation
         estimation of the coefficients.
 
-    truncation : str
-        Truncation method. The only method availbe is `"total order"`.
+    truncation : str, optional
+        Truncation method. The only method availabe is `"total order"`.
+
+    q : float, optional
+        Default `q=1.0` (equivalent to total order). Defines the power of the
+        hyperbolic truncation and must lie within (0,1]. Is ignored if
+        `truncation="total order"`.
 
     Attributes
     ----------
@@ -39,6 +44,9 @@ class PolyChaosExpansion():
     ----------
     .. [1] Xiu, D. (2010). Numerical Methods for Stochastic Computations: A
            Spectral Method Approach. Princeton University Press.
+    .. [2] Lüthen, N., Marelli, S., & Sudret, B. (2021). Sparse Polynomial
+           Chaos Expansions: Literature Survey and Benchmark. SIAM/ASA Journal
+           on Uncertainty Quantification, 9(2), 593–649.
     """
     def __init__(
         self,
@@ -47,6 +55,7 @@ class PolyChaosExpansion():
         deg: int,
         moments: npt.ArrayLike | None = None,
         truncation: str = "total order",
+        q: float = 1.0,
     ) -> None:
         support = np.array(support)
         if np.any(support[0] >= support[1]):
@@ -60,17 +69,23 @@ class PolyChaosExpansion():
                 f"Invalid polynomial degree `{deg}`. Should be ≥ 1.")
         self.deg = deg  # Total order degree
 
-        if truncation != "total order":
-            raise NotImplementedError(
-                "No other truncation scheme than 'total order'"
-                " is available yet.")
         self.truncation = truncation  # Truncation method
+        match self.truncation:
+            case "total order": self.q = 1.0
+            case "hyperbolic":
+                if 0.0 < q <= 1.0:
+                    self.q = q
+                else:
+                    raise ValueError("q must be such that 0 < q ≤ 1.")
+            case _: raise ValueError(
+                f"Invalid truncation method '{self.truncation}'.")
 
-        match distribution:
+        self.distribution = distribution
+        match self.distribution:
             case "uniform": p = legendre
             case "gaussian" | "normal": p = hermitenorm
-            case _: raise ValueError(f"Invalid distribution '{distribution}'.")
-        self.distribution = distribution
+            case _: raise ValueError(
+                f"Invalid distribution '{self.distribution}'.")
 
         self.dim = support.shape[1]  # Input dimensionality
 
@@ -87,10 +102,10 @@ class PolyChaosExpansion():
 
         Parameters
         ----------
-        xobs : ndarray(nobs, dim)
+        xobs : ndarray of shape (nobs, dim)
             Input observations.
 
-        yobs : ndarray(nobs, 1) or ndarray(nobs,)
+        yobs : ndarray of shape (nobs, 1) or (nobs,)
             Output observations.
         """
         self.xobs_ = xobs
@@ -124,8 +139,8 @@ class PolyChaosExpansion():
         Parameters
         ----------
         f : function
-            Function to be modeled. Should take an ndarray(1, dim) as input
-            and return a float.
+            Function to be modeled. Should take an ndarray of shape (1, dim)
+            as input and return a float.
 
         method : str
             Integration scheme, either `"gauss"` (for Gauss-Legendre or
@@ -199,12 +214,12 @@ class PolyChaosExpansion():
 
         Parameters
         ----------
-        x : ndarray(n, dim)
+        x : ndarray of shape (n, dim)
             Prediction inputs.
 
         Returns
         -------
-        y : ndarray(n, 1)
+        y : ndarray of shape (n, 1)
             Corresponding predictions.
         """
         match self.distribution:
@@ -264,11 +279,11 @@ class PolyChaosExpansion():
         """
         Parameters
         ----------
-        x : ndarray(n, dim)
+        x : ndarray of shape (n, dim)
 
         Returns
         -------
-        basis : ndarray(num_terms, n)
+        basis : ndarray of shape (num_terms, n)
         """
         return np.array([
             np.prod([
@@ -288,4 +303,9 @@ class PolyChaosExpansion():
         """
         # TODO: Super inefficient for high-dimensional cases
         prod_ = product(*[np.arange(self.deg + 1)] * self.dim)
-        return [item for item in prod_ if np.sum(item) <= self.deg]
+        # To avoid double conversion to numpy arrays in the next step
+        prod = (np.array(item) for item in prod_)
+        return [
+            item for item in prod
+            if np.sum(item ** self.q) ** (1 / self.q) <= self.deg
+        ]
