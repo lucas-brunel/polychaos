@@ -40,6 +40,27 @@ class PolyChaosExpansion():
     coeffs : ndarray
         Computed PCE coefficients.
 
+    Examples
+    --------
+    Let :math:`X` be a random variable, with distribution
+    :math:`\\mathcal{N}(0,1)`. We seek to model the random variable
+    :math:`f(X)=2+3X-0.3X^2` using Polynomial Chaos Expansion.
+
+    >>> import numpy as np
+    >>> f = lambda x: 2 + 3 * x - 0.3 * x ** 2
+    >>>
+    >>> pce = PolyChaosExpansion(
+    >>>     distribution="gaussian",
+    >>>     support=[[-np.inf], [np.inf]],
+    >>>     deg=3,
+    >>>     moments=[[0.0], [1.0]]
+    >>> )
+    >>> pce.collocation(f=f, method="gauss", n=3)
+    >>> pce.get_mean()
+    np.float64(1.7)
+    >>> pce.get_var()
+    np.float64(9.18)
+
     References
     ----------
     .. [1] Xiu, D. (2010). Numerical Methods for Stochastic Computations: A
@@ -241,7 +262,7 @@ class PolyChaosExpansion():
         -------
         mean : float
         """
-        return self.coeffs[0].item()
+        return self.coeffs[0][0]
 
     def get_var(self) -> float:
         """Compute the variance from the coefficients.
@@ -264,7 +285,7 @@ class PolyChaosExpansion():
                     for index in self.multi_index if np.sum(index) > 0
                 ])
 
-        return np.sum(poly_sq_norms * self.coeffs[1:].flatten() ** 2)
+        return np.sum(poly_sq_norms * self.coeffs[1:, 0] ** 2)
 
     def get_std(self) -> float:
         """Compute the standard deviation from the coefficients.
