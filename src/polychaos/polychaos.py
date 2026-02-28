@@ -1,4 +1,4 @@
-from itertools import product
+from itertools import combinations, product
 from math import factorial
 from typing import Callable
 
@@ -321,12 +321,12 @@ class PolyChaosExpansion():
         -------
         orders : list of tuples
             List of multi-index, where each tuple has length `self.dim`.
+
+        Notes
+        -----
+        See https://math.stackexchange.com/questions/36250/number-of-monomials-of-certain-degree
         """
-        # TODO: Super inefficient for high-dimensional cases
-        prod_ = product(*[np.arange(self.deg + 1)] * self.dim)
-        # To avoid double conversion to numpy arrays in the next step
-        prod = (np.array(item) for item in prod_)
-        return [
-            item for item in prod
-            if np.sum(item ** self.q) ** (1 / self.q) <= self.deg
-        ]
+        arr = list(combinations(range(self.deg + self.dim), self.dim))
+        degrees = np.diff(arr, axis=1, prepend=-1) - 1
+        mask = np.sum(degrees ** self.q, axis=1)  ** (1 / self.q) > self.deg
+        return degrees[~mask, :]
