@@ -77,7 +77,7 @@ def test_docstring_example():
         deg=3,
         moments=[[0.0], [1.0]]
     )
-    pce.collocation(f=f, method="gauss", n=3)
+    pce.collocation(f=f, method="gauss", nint=3)
 
     assert_allclose(pce.get_mean(), 1.7, atol=1e-10)
     assert_allclose(pce.get_var(), 9.18, atol=1e-10)
@@ -115,7 +115,7 @@ def test_collocation_raises_error():
     pce = PolyChaosExpansion("gaussian", [[-1], [1]], deg=5)
 
     with pytest.raises(NotImplementedError):
-        pce.collocation(nd_poly_test, "monte carlo", 10)
+        pce.collocation(nd_poly_test, "smolyak", 10)
 
     with pytest.raises(ValueError, match="`n` should be > 0."):
         pce.collocation(nd_poly_test, "gauss", 0)
@@ -123,5 +123,5 @@ def test_collocation_raises_error():
     with pytest.raises(ValueError, match="Invalid integration method"):
         pce.collocation(nd_poly_test, "invalid", 10)
 
-    with pytest.raises(ValueError, match="Moments must be provided for Gaussian collocation."):
+    with pytest.raises(ValueError, match="Moments must be provided for Gauss collocation."):
         pce.collocation(nd_poly_test, "gauss", 10)

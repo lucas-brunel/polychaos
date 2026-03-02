@@ -1,6 +1,6 @@
-from itertools import combinations, product
+from itertools import combinations
 from math import factorial
-from typing import Callable
+from typing import Callable, Collection
 
 import numpy as np
 import numpy.typing as npt
@@ -129,21 +129,12 @@ class PolyChaosExpansion():
         yobs : ndarray of shape (nobs, 1) or (nobs,)
             Output observations.
         """
+        if self.distribution in {"gaussian", "normal"} and self.moments is None:
+            self.moments = np.array(
+                [np.mean(xobs, axis=0), np.var(xobs, axis=0, ddof=1)])
+
         self.xobs_ = xobs
-        match self.distribution:
-            case "uniform":
-                self.xobs = (
-                    2 * (self.xobs_ - self.support[[0]])
-                    / np.diff(self.support, axis=0).reshape(1, -1)
-                    - 1
-                )
-            case "gaussian" | "normal":
-                if self.moments is None:
-                    self.moments = np.array(
-                        [np.mean(xobs, axis=0), np.var(xobs, axis=0, ddof=1)])
-                self.xobs = (
-                    (xobs - self.moments[[0]]) / np.sqrt(self.moments[[1]])
-                )
+        self.xobs = self._normalize(self.xobs_)
 
         self.yobs = yobs.reshape(-1, 1)
 
@@ -154,7 +145,7 @@ class PolyChaosExpansion():
         #                      ^^^^^^^^^^^^^^^^^^^^^^^^^
         # Better than bare np.linalg.inv(basis @ basis.T) @ basis @ self.yobs
 
-    def collocation(self, f: Callable, method: str, n: int) -> None:
+    def collocation(self, f: Callable, method: str, nint: int) -> None:
         """Compute the PCE coefficients with collocation.
 
         Parameters
@@ -165,60 +156,30 @@ class PolyChaosExpansion():
 
         method : str
             Integration scheme, either `"gauss"` (for Gauss-Legendre or
-            Gauss-Hermite). `"monte carlo"` is planned but not yet available.
+            Gauss-Hermite). `"smolyak"` is planned but not yet available.
 
-        n : int
-            If `"gauss"`, `n` is the degree. If `"monte carlo"`, `n`
-            is the number of points. Must be  > 0.
+        nint : int
+            If `"gauss"`, `nint` is the number of point per dimension.
         """
-        if method == "monte carlo":
+        if method == "smolyak":
             raise NotImplementedError()
         elif method != "gauss":
             raise ValueError(f"Invalid integration method '{method}'.")
 
-        if not n > 0:
+        if not nint > 0:
             raise ValueError(f"`n` should be > 0.")
 
-        match self.distribution:
-            case "uniform":
-                sq_norms = np.array([
-                    np.prod([1 / (2 * i + 1) for i in index])
-                    for index in self.multi_index
-                ])
-                xint, wint = np.polynomial.legendre.leggauss(n)
-                const = 0.5 ** self.dim
-                normalize = lambda u: (
-                    (0.5 * (u + 1))
-                    * np.diff(self.support, axis=0).reshape(1, -1)
-                    + self.support[[0]]
-                )
-            case "gaussian" | "normal":
-                if self.moments is None:
-                    raise ValueError(
-                        "Moments must be provided for Gaussian collocation.")
-                xint, wint = np.polynomial.hermite_e.hermegauss(n)
-                sq_norms = np.array([
-                    np.prod([factorial(i) for i in index if i != 1])
-                    for index in self.multi_index
-                ])
-                const = (1.0 / np.sqrt(2.0 * np.pi)) ** self.dim
-                normalize = lambda u: (
-                    u * np.sqrt(self.moments[[1]]) + self.moments[[0]]
-                )
+        # Quadrature points, weights, and constant
+        xint_meshgrid, ws, const = self._quadrature(nint)
 
-        # Get the quadrature points
-        xint_meshgrid = np.meshgrid(*[xint] * self.dim, indexing="ij")
+        gamma = self._normalization_factors()
+
+        # Get the function value at the quadrature points in the right space
         pts = np.stack(xint_meshgrid, axis=-1).reshape(-1, self.dim)
         #     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Puts the dimension in x as the
         #              last so that it's ran through first when using reshape
-
-        # Compute the quadrature weights as the product unidimensional weights
-        wint_meshgrid = np.meshgrid(*[wint] * self.dim, indexing="ij")
-        ws = np.prod(wint_meshgrid, axis=0)
-
-        # Get the function value at the quadrature points in the right space
         ys = np.array([
-            f(normalize(pt.reshape(1, -1))) for pt in pts
+            f(self._denormalize(pt.reshape(1, -1))) for pt in pts
         ]).reshape(xint_meshgrid[0].shape)
 
         # Quadrature
@@ -227,7 +188,7 @@ class PolyChaosExpansion():
                 [self.polynomials[i](xs) for xs, i in zip(xint_meshgrid, index)],
                 axis=0
             )) / sn
-            for index, sn in zip(self.multi_index, sq_norms)
+            for index, sn in zip(self.multi_index, gamma)
         ]).reshape(-1, 1)
 
     def predict(self, x: npt.NDArray) -> npt.NDArray:
@@ -243,15 +204,7 @@ class PolyChaosExpansion():
         y : ndarray of shape (n, 1)
             Corresponding predictions.
         """
-        match self.distribution:
-            case "uniform":
-                x = (
-                    2 * (x - self.support[[0]])
-                    / np.diff(self.support, axis=0).reshape(1, -1)
-                    - 1
-                )
-            case "gaussian" | "normal":
-                x = (x - self.moments[[0]]) / np.sqrt(self.moments[[1]])
+        x = self._normalize(x)
         basis = self._build_basis(x)
         return basis.T @ self.coeffs
 
@@ -271,21 +224,8 @@ class PolyChaosExpansion():
         -------
         var : float
         """
-        # Use the analytical expression of some integrals for efficiency
-        # See https://dlmf.nist.gov/18.3
-        match self.distribution:
-            case "uniform":
-                poly_sq_norms = np.array([
-                    np.prod([1 / (2 * i + 1) for i in index])
-                    for index in self.multi_index if np.sum(index) > 0
-                ])
-            case "gaussian" | "normal":
-                poly_sq_norms = np.array([
-                    np.prod([factorial(i) for i in index if i != 1])
-                    for index in self.multi_index if np.sum(index) > 0
-                ])
-
-        return np.sum(poly_sq_norms * self.coeffs[1:, 0] ** 2)
+        gamma = self._normalization_factors()[1:]
+        return np.sum(gamma * self.coeffs[1:, 0] ** 2)
 
     def get_std(self) -> float:
         """Compute the standard deviation from the coefficients.
@@ -330,3 +270,117 @@ class PolyChaosExpansion():
         degrees = np.diff(arr, axis=1, prepend=-1) - 1
         mask = np.sum(degrees ** self.q, axis=1)  ** (1 / self.q) > self.deg
         return degrees[~mask, :]
+
+    def _normalization_factors(self) -> npt.NDArray:
+        """Generate the normalization factors γ.
+
+        Returns
+        -------
+        gamma : ndarray
+            The normalization factors corresponding to all the elements of the
+            multi-index.
+        """
+        # Use the analytical expression of some integrals for efficiency
+        # See https://dlmf.nist.gov/18.3
+        match self.distribution:
+            case "uniform":
+                gamma = np.array([
+                    np.prod([1 / (2 * i + 1) for i in index])
+                    for index in self.multi_index
+                ])
+            case "gaussian" | "normal":
+                gamma = np.array([
+                    np.prod([factorial(i) for i in index])
+                    for index in self.multi_index
+                ])
+        return gamma
+
+    def _normalize(self, x: npt.NDArray) -> npt.NDArray:
+        """Normalize data depending on the distribution.
+        
+        Parameters
+        ----------
+        x : ndarray (nx, dim)
+
+        Returns
+        -------
+        x_normalized : ndarray (nx, dim) 
+        """
+        match self.distribution:
+            case "uniform":
+                x = (
+                    2 * (x - self.support[[0]])
+                    / np.diff(self.support, axis=0).reshape(1, -1)
+                    - 1
+                )
+            case "gaussian" | "normal":
+                x = (x - self.moments[[0]]) / np.sqrt(self.moments[[1]])
+
+        return x
+
+    def _denormalize(self, x: npt.NDArray) -> npt.NDArray:
+        """Denormalize data depending on the distribution.
+        
+        Parameters
+        ----------
+        x : ndarray (nx, dim)
+
+        Returns
+        -------
+        x_denormalized : ndarray (nx, dim) 
+        """
+        match self.distribution:
+            case "uniform":
+                x = (
+                    (0.5 * (x + 1))
+                    * np.diff(self.support, axis=0).reshape(1, -1)
+                    + self.support[[0]]
+                )
+            case "gaussian" | "normal":
+                x = x * np.sqrt(self.moments[[1]]) + self.moments[[0]]
+
+        return x
+
+    def _quadrature(self, nint: int) -> tuple:
+        """Generates the quadrature points, their weights, and the integration
+        constant.
+
+        Constructs a full tensor-product grid for numerical integration based
+        on the underlying probability measure (Legendre-Gauss for uniform,
+        probabilist's Hermite-Gauss for normal).
+
+        Parameters
+        ----------
+        nint : int
+            Number of points per dimension for the quadrature.
+
+        Returns
+        -------
+        xint_meshgrid : list of dim ndarrays of size (nint,) * dim
+            Quadrature points.
+
+        weights : ndarray of size (nint,) * dim
+            Quadrature weights.
+
+        const : float
+            Quadrature constant.
+        """
+        match self.distribution:
+            case "uniform":
+                xint, wint = np.polynomial.legendre.leggauss(nint)
+                const = 0.5 ** self.dim
+            case "gaussian" | "normal":
+                if self.moments is None:
+                    raise ValueError(
+                        "Moments must be provided for Gauss collocation.")
+                xint, wint = np.polynomial.hermite_e.hermegauss(nint)
+                const = (1.0 / np.sqrt(2.0 * np.pi)) ** self.dim
+
+        # Get the quadrature points
+        xint_meshgrid = np.meshgrid(*[xint] * self.dim, indexing="ij")
+
+        # Compute the quadrature weights as the product unidimensional weights
+        wint_meshgrid = np.meshgrid(*[wint] * self.dim, indexing="ij")
+        weights = np.prod(wint_meshgrid, axis=0)
+
+        return (xint_meshgrid, weights, const)
