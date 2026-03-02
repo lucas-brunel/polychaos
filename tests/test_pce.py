@@ -81,6 +81,7 @@ def test_docstring_example():
 
     assert_allclose(pce.get_mean(), 1.7, atol=1e-10)
     assert_allclose(pce.get_var(), 9.18, atol=1e-10)
+    assert_allclose(pce.get_std(), np.sqrt(9.18), atol=1e-10)
 
 # Test custom errors ----------------------------------------------------------
 
