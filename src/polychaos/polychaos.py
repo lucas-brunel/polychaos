@@ -170,7 +170,7 @@ class PolyChaosExpansion():
             raise ValueError(f"`n` should be > 0.")
 
         # Quadrature points, weights, and constant
-        xint_meshgrid, ws, const = self._quadrature(nint)
+        xint_meshgrid, ws = self._quadrature(nint)
 
         gamma = self._normalization_factors()
 
@@ -184,7 +184,7 @@ class PolyChaosExpansion():
 
         # Quadrature
         self.coeffs = np.array([
-            const * np.sum(ws * ys * np.prod(
+            np.sum(ws * ys * np.prod(
                 [self.polynomials[i](xs) for xs, i in zip(xint_meshgrid, index)],
                 axis=0
             )) / sn
@@ -342,8 +342,7 @@ class PolyChaosExpansion():
         return x
 
     def _quadrature(self, nint: int) -> tuple:
-        """Generates the quadrature points, their weights, and the integration
-        constant.
+        """Generates the quadrature points and their weights.
 
         Constructs a full tensor-product grid for numerical integration based
         on the underlying probability measure (Legendre-Gauss for uniform,
@@ -360,10 +359,7 @@ class PolyChaosExpansion():
             Quadrature points.
 
         weights : ndarray of size (nint,) * dim
-            Quadrature weights.
-
-        const : float
-            Quadrature constant.
+            Quadrature weights, scaled so that the sum equals 1.
         """
         match self.distribution:
             case "uniform":
@@ -381,6 +377,6 @@ class PolyChaosExpansion():
 
         # Compute the quadrature weights as the product unidimensional weights
         wint_meshgrid = np.meshgrid(*[wint] * self.dim, indexing="ij")
-        weights = np.prod(wint_meshgrid, axis=0)
+        weights = np.prod(wint_meshgrid, axis=0) * const
 
-        return (xint_meshgrid, weights, const)
+        return (xint_meshgrid, weights)
