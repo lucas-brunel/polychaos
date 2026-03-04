@@ -41,7 +41,7 @@ for N in Ns:
     var_mc.append(np.var(ysubsample, ddof=1))
 
     pce = PolyChaosExpansion(
-        distribution="uniform",
+        distribution=["uniform"] * 3,
         support=support, 
         deg=15,
         moments=None,

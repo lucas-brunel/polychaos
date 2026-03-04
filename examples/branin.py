@@ -46,7 +46,7 @@ yobs = branin(xobs).reshape(-1, 1)
 # PCE using regression to approximate the coefficients
 
 pce_reg = PolyChaosExpansion(
-    "uniform", support, 10, truncation="hyperbolic", q=0.5)
+    ["uniform"] * 2, support, 10, truncation="hyperbolic", q=0.5)
 pce_reg.regression(xobs, yobs)
 ypce_reg = pce_reg.predict(x)
 Ypce_reg = ypce_reg.reshape(X1.shape)
@@ -54,7 +54,7 @@ Ypce_reg = ypce_reg.reshape(X1.shape)
 # PCE using collocation to approximate the coefficients
 
 pce_col = PolyChaosExpansion(
-    "uniform", support, 10, truncation="hyperbolic", q=0.5)
+    ["uniform"] * 2, support, 10, truncation="hyperbolic", q=0.5)
 pce_col.collocation(branin, "gauss", int(N ** 0.5))
 ypce_col = pce_col.predict(x)
 Ypce_col = ypce_col.reshape(X1.shape)

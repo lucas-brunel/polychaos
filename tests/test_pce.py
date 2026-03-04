@@ -33,7 +33,7 @@ def test_regression_perfect_fit_nd(nd_poly_test, dist, support, moments):
 
     # Polynomial total degree = 3 => `deg=4`` should be a perfect fit
     pce = PolyChaosExpansion(
-        distribution=dist, support=support, deg=4, moments=moments
+        distribution=[dist] * dim, support=support, deg=4, moments=moments
     )
     pce.regression(xobs, yobs)
     y_pred = pce.predict(xobs)
@@ -46,7 +46,7 @@ def test_regression_perfect_fit_nd(nd_poly_test, dist, support, moments):
 ])
 def test_collocation_perfect_fit_nd(nd_poly_test, dist, support, moments):
     """Test if PCE perfectly fits a 2D polynomial using collocation."""
-    
+
     dim = len(support[0])
     n_samples = 100
 
@@ -58,7 +58,7 @@ def test_collocation_perfect_fit_nd(nd_poly_test, dist, support, moments):
     yobs = nd_poly_test(xobs)
 
     pce = PolyChaosExpansion(
-        distribution=dist, support=support, deg=4, moments=moments
+        distribution=[dist] * dim, support=support, deg=4, moments=moments
     )
     
     # n=5 provides enough quadrature points per dimension for degree 4
@@ -72,7 +72,7 @@ def test_docstring_example():
     f = lambda x: 2 + 3 * x - 0.3 * x ** 2
 
     pce = PolyChaosExpansion(
-        distribution="gaussian",
+        distribution=["gaussian"],
         support=[[-np.inf], [np.inf]],
         deg=3,
         moments=[[0.0], [1.0]]
@@ -83,37 +83,76 @@ def test_docstring_example():
     assert_allclose(pce.get_var(), 9.18, atol=1e-10)
     assert_allclose(pce.get_std(), np.sqrt(9.18), atol=1e-10)
 
+def test_mixed_distribution_pce():
+    """
+    Test PCE combining Uniform and Gaussian distributions against an 
+    exact analytical polynomial benchmark.
+    
+    Model: Y = X_1 + X_2^2 + X_1 * X_2
+    Inputs: X_1 ~ U(-1, 1), X_2 ~ N(0, 1)
+    Analytical Mean: 1.0
+    Analytical Variance: 8/3
+    """
+    f = lambda x: x[:, 0] + x[:, 1]**2 + x[:, 0] * x[:, 1]
+
+    support = [
+        [-1.0, -np.inf], 
+        [ 1.0,  np.inf]
+    ]
+    
+    moments = [
+        [0.0, 0.0], 
+        [0.0, 1.0]
+    ]
+
+    pce = PolyChaosExpansion(
+        distribution=["uniform", "gaussian"],
+        support=support,
+        deg=2,
+        moments=moments
+    )
+    
+    pce.collocation(f=f, method="gauss", nint=3)
+
+    assert_allclose(pce.get_mean(), 1.0, atol=1e-10)
+    assert_allclose(pce.get_var(), 8.0 / 3.0, atol=1e-10)
+
 # Test custom errors ----------------------------------------------------------
 
 def test_support_bounds_raises_error():
     """Test that reversed bounds trigger an error."""
     with pytest.raises(ValueError, match="Bounds should be strictly increasing."):
-        PolyChaosExpansion("uniform", [[1], [-1]], deg=5)
+        PolyChaosExpansion(["uniform"], [[1], [-1]], deg=5)
 
 def test_invalid_degree_raises_error():
     """Test that invalid polynomial degree triggers an error."""
     with pytest.raises(ValueError, match="Invalid polynomial degree"):
-        PolyChaosExpansion("uniform", [[-1], [1]], deg=0)
+        PolyChaosExpansion(["uniform"], [[-1], [1]], deg=0)
         
 def test_invalid_distribution_raises_error():
     """Test that invalid distribution triggers an error."""
     with pytest.raises(ValueError, match="Invalid distribution"):
-        PolyChaosExpansion("invalid", [[-1], [1]], deg=5)
+        PolyChaosExpansion(["invalid"], [[-1], [1]], deg=5)
+
+def test_invalid_distribution_dimension_raises_error():
+    """Test that invalid distribution triggers an error."""
+    with pytest.raises(ValueError, match="`distribution` should be a list of"):
+        PolyChaosExpansion(["uniform"] * 3, [[-1], [1]], deg=5)
 
 def test_invalid_truncation_raises_error():
     """Test that invalid truncation scheme triggers an error."""
     with pytest.raises(ValueError, match="Invalid truncation method"):
-        PolyChaosExpansion("uniform", [[-1], [1]], deg=5, truncation="invalid")
+        PolyChaosExpansion(["uniform"], [[-1], [1]], deg=5, truncation="invalid")
 
 def test_invalid_q_raises_error():
     """Test that invalid q triggers an error."""
     with pytest.raises(ValueError, match="q must be such that 0 < q ≤ 1."):
         PolyChaosExpansion(
-            "uniform", [[-1], [1]], deg=5, truncation="hyperbolic", q=0.0)
+            ["uniform"], [[-1], [1]], deg=5, truncation="hyperbolic", q=0.0)
 
 def test_collocation_raises_error():
     """Test collocation errors."""
-    pce = PolyChaosExpansion("gaussian", [[-1], [1]], deg=5)
+    pce = PolyChaosExpansion(["gaussian"], [[-1], [1]], deg=5)
 
     with pytest.raises(NotImplementedError):
         pce.collocation(nd_poly_test, "smolyak", 10)

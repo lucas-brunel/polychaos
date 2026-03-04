@@ -11,9 +11,9 @@ class PolyChaosExpansion():
 
     Parameters
     ----------
-    distribution : str
-        Input distribution, either `"uniform"`, `"gaussian"`
-        (or `"normal"`).
+    distribution : list of str
+        Input distributions in a list, each being either `"uniform"`,
+        `"gaussian"`.
 
     support : array_like of shape (2, dim)
         Support of the input random variables.
@@ -70,7 +70,7 @@ class PolyChaosExpansion():
     """
     def __init__(
         self,
-        distribution: str,
+        distribution: list[str],
         support: npt.ArrayLike,
         deg: int,
         moments: npt.ArrayLike | None = None,
@@ -83,6 +83,7 @@ class PolyChaosExpansion():
                 "Invalid bounds for support."
                 " Bounds should be strictly increasing.")
         self.support = support  # Support of the input variables
+        self.dim = support.shape[1]  # Input dimensionality
 
         if deg < 1:
             raise ValueError(
@@ -100,17 +101,22 @@ class PolyChaosExpansion():
             case _: raise ValueError(
                 f"Invalid truncation method '{self.truncation}'.")
 
-        self.distribution = distribution
-        match self.distribution:
-            case "uniform": p = legendre
-            case "gaussian" | "normal": p = hermitenorm
-            case _: raise ValueError(
-                f"Invalid distribution '{self.distribution}'.")
+        if len(distribution) != self.dim:
+            raise ValueError(
+                f"`distribution` should be a list of {self.dim} items.")
 
-        self.dim = support.shape[1]  # Input dimensionality
+        self.distribution = distribution
+        polys = []
+        for dist in distribution:
+            match dist:
+                case "uniform": polys.append(legendre)
+                case "gaussian": polys.append(hermitenorm)
+                case _: raise ValueError(
+                    f"Invalid distribution '{dist}'.")
 
         # Store the polynomials for later use, for efficiency
-        self.polynomials = [p(i) for i in range(deg + 1)]
+        # dim 0 -> input dimension index ; dim 1 -> polynomial degree
+        self.polynomials = [[p(i) for i in range(deg + 1)] for p in polys]
 
         # Input mean and variance if provided
         self.moments = np.array(moments) if moments is not None else None
@@ -128,7 +134,7 @@ class PolyChaosExpansion():
         yobs : ndarray of shape (nobs, 1) or (nobs,)
             Output observations.
         """
-        if self.distribution in {"gaussian", "normal"} and self.moments is None:
+        if "gaussian" in self.distribution and self.moments is None:
             self.moments = np.array(
                 [np.mean(xobs, axis=0), np.var(xobs, axis=0, ddof=1)])
 
@@ -184,10 +190,13 @@ class PolyChaosExpansion():
         # Quadrature
         self.coeffs = np.array([
             np.sum(ws * ys * np.prod(
-                [self.polynomials[i](xs) for xs, i in zip(xint_meshgrid, index)],
+                [
+                    self.polynomials[d][i](xs)
+                    for d, (xs, i) in enumerate(zip(xint_meshgrid, index))
+                ],
                 axis=0
-            )) / sn
-            for index, sn in zip(self.multi_index, gamma)
+            )) / g
+            for index, g in zip(self.multi_index, gamma)
         ]).reshape(-1, 1)
 
     def predict(self, x: npt.NDArray) -> npt.NDArray:
@@ -247,7 +256,7 @@ class PolyChaosExpansion():
         """
         return np.array([
             np.prod([
-                self.polynomials[i](x[:, d])
+                self.polynomials[d][i](x[:, d])
                 for d, i in enumerate(index)
             ], axis=0)
             for index in self.multi_index
@@ -281,16 +290,18 @@ class PolyChaosExpansion():
         """
         # Use the analytical expression of some integrals for efficiency
         # See https://dlmf.nist.gov/18.3
-        match self.distribution:
-            case "uniform":
-                gamma = np.array([
-                    np.prod(1 / (2 * index + 1)) for index in self.multi_index
-                ])
-            case "gaussian" | "normal":
-                gamma = np.array([
-                    np.prod(factorial(index)) for index in self.multi_index
-                ])
-        return gamma
+        # NOTE: that double for loop is super slow -> vectorize
+        gamma = []
+        for index in self.multi_index:
+            gamma_ = []
+            for d, i in enumerate(index):
+                match self.distribution[d]:
+                    case "uniform":
+                        gamma_.append(1 / (2 * i + 1))
+                    case "gaussian":
+                        gamma_.append(factorial(i))
+            gamma.append(np.prod(gamma_))
+        return np.array(gamma)
 
     def _normalize(self, x: npt.NDArray) -> npt.NDArray:
         """Normalize data depending on the distribution.
@@ -301,19 +312,22 @@ class PolyChaosExpansion():
 
         Returns
         -------
-        x_normalized : ndarray (nx, dim) 
+        x_norm : ndarray (nx, dim) 
         """
-        match self.distribution:
-            case "uniform":
-                x = (
-                    2 * (x - self.support[[0]])
-                    / np.diff(self.support, axis=0).reshape(1, -1)
-                    - 1
-                )
-            case "gaussian" | "normal":
-                x = (x - self.moments[[0]]) / np.sqrt(self.moments[[1]])
+        x_norm = np.array(x, copy=True, dtype=float)
 
-        return x
+        for d, dist in enumerate(self.distribution):
+            match dist:
+                case "uniform":
+                    lower, upper = self.support[0, d], self.support[1, d]
+                    x_norm[:, d] = (
+                        2.0 * (x_norm[:, d] - lower) / (upper - lower) - 1.0
+                    )
+                case "gaussian":
+                    mean, var = self.moments[0, d], self.moments[1, d]
+                    x_norm[:, d] = (x_norm[:, d] - mean) / np.sqrt(var)
+
+        return x_norm
 
     def _denormalize(self, x: npt.NDArray) -> npt.NDArray:
         """Denormalize data depending on the distribution.
@@ -324,26 +338,31 @@ class PolyChaosExpansion():
 
         Returns
         -------
-        x_denormalized : ndarray (nx, dim) 
+        x_denorm : ndarray (nx, dim) 
         """
-        match self.distribution:
-            case "uniform":
-                x = (
-                    (0.5 * (x + 1))
-                    * np.diff(self.support, axis=0).reshape(1, -1)
-                    + self.support[[0]]
-                )
-            case "gaussian" | "normal":
-                x = x * np.sqrt(self.moments[[1]]) + self.moments[[0]]
+        x_denorm = np.array(x, copy=True, dtype=float)
 
-        return x
+        for d, dist in enumerate(self.distribution):
+            match dist:
+                case "uniform":
+                    lower, upper = self.support[0, d], self.support[1, d]
+                    x_denorm[:, d] = (
+                        0.5 * (x_denorm[:, d] + 1.0) * (upper - lower) + lower
+                    )
+                case "gaussian":
+                    mean, var = self.moments[0, d], self.moments[1, d]
+                    x_denorm[:, d] = x_denorm[:, d] * np.sqrt(var) + mean
+                case _:
+                    raise ValueError(f"Unsupported distribution: {dist}")
+
+        return x_denorm
 
     def _quadrature(self, nint: int) -> tuple:
         """Generates the quadrature points and their weights.
 
         Constructs a full tensor-product grid for numerical integration based
         on the underlying probability measure (Legendre-Gauss for uniform,
-        probabilist's Hermite-Gauss for normal).
+        probabilist's Hermite-Gauss for Gaussian).
 
         Parameters
         ----------
@@ -358,22 +377,29 @@ class PolyChaosExpansion():
         weights : ndarray of size (nint,) * dim
             Quadrature weights, scaled so that the sum equals 1.
         """
-        match self.distribution:
-            case "uniform":
-                xint, wint = np.polynomial.legendre.leggauss(nint)
-                const = 0.5 ** self.dim
-            case "gaussian" | "normal":
-                if self.moments is None:
-                    raise ValueError(
-                        "Moments must be provided for Gauss collocation.")
-                xint, wint = np.polynomial.hermite_e.hermegauss(nint)
-                const = (1.0 / np.sqrt(2.0 * np.pi)) ** self.dim
+        if "gaussian" in self.distribution and self.moments is None:
+            raise ValueError(
+                "Moments must be provided for Gauss collocation.")
+
+        def quadrature_1d(dist: str) -> tuple[npt.NDArray, npt.NDArray]:
+            match dist:
+                case "uniform":
+                    xint, wint = np.polynomial.legendre.leggauss(nint)
+                    wint *= 0.5
+                case "gaussian":
+                    xint, wint = np.polynomial.hermite_e.hermegauss(nint)
+                    wint = wint * 1.0 / np.sqrt(2.0 * np.pi)
+            return xint, wint
+
+        xint_tuple, wint_tuple = zip(
+            *[quadrature_1d(dist) for dist in self.distribution])
 
         # Get the quadrature points
-        xint_meshgrid = np.meshgrid(*[xint] * self.dim, indexing="ij")
+        # NOTE: meshgrid -> high memory usage
+        xint_meshgrid = np.meshgrid(*xint_tuple, indexing="ij")
 
         # Compute the quadrature weights as the product unidimensional weights
-        wint_meshgrid = np.meshgrid(*[wint] * self.dim, indexing="ij")
-        weights = np.prod(wint_meshgrid, axis=0) * const
+        wint_meshgrid = np.meshgrid(*wint_tuple, indexing="ij")
+        weights = np.prod(wint_meshgrid, axis=0)
 
         return (xint_meshgrid, weights)
