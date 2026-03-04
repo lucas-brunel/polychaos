@@ -2,7 +2,7 @@
 
 ## Installation
 
-To use or develop this code, clone the repository and install it in "editable" mode. This ensures that any changes you make to the source code are instantly reflected when you import the package. To do this:
+To use or develop this code, clone the repository and install it in “editable” mode. This ensures that any changes you make to the source code are instantly reflected when you import the package. To do this:
 
 * Navigate to the root folder of the project
 * Ensure you are using Python 3.10 or newer

@@ -1,10 +1,9 @@
 from itertools import combinations
-from math import factorial
-from typing import Callable, Collection
+from typing import Callable
 
 import numpy as np
 import numpy.typing as npt
-from scipy.special import hermitenorm, legendre
+from scipy.special import hermitenorm, legendre, factorial
 from scipy.linalg import lstsq
 
 class PolyChaosExpansion():
@@ -285,13 +284,11 @@ class PolyChaosExpansion():
         match self.distribution:
             case "uniform":
                 gamma = np.array([
-                    np.prod([1 / (2 * i + 1) for i in index])
-                    for index in self.multi_index
+                    np.prod(1 / (2 * index + 1)) for index in self.multi_index
                 ])
             case "gaussian" | "normal":
                 gamma = np.array([
-                    np.prod([factorial(i) for i in index])
-                    for index in self.multi_index
+                    np.prod(factorial(index)) for index in self.multi_index
                 ])
         return gamma
 
