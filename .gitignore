@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Airspeed velocity
+.asv/
+
+# Misc.
+.DS_Store
+.vscode/
+.idea/
