@@ -1,3 +1,4 @@
+from functools import reduce
 from itertools import combinations
 from typing import Callable
 
@@ -401,11 +402,10 @@ class PolyChaosExpansion():
             *[quadrature_1d(dist) for dist in self.distribution])
 
         # Get the quadrature points
-        # NOTE: meshgrid -> high memory usage
         xint_meshgrid = np.meshgrid(*xint_tuple, indexing="ij")
 
         # Compute the quadrature weights as the product unidimensional weights
-        wint_meshgrid = np.meshgrid(*wint_tuple, indexing="ij")
-        weights = np.prod(wint_meshgrid, axis=0)
+        # https://stackoverflow.com/questions/17138393/numpy-outer-product-of-n-vectors
+        weights = reduce(np.multiply.outer, wint_tuple)
 
         return (xint_meshgrid, weights)
