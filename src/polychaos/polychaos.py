@@ -290,18 +290,20 @@ class PolyChaosExpansion():
         """
         # Use the analytical expression of some integrals for efficiency
         # See https://dlmf.nist.gov/18.3
-        # NOTE: that double for loop is super slow -> vectorize
-        gamma = []
-        for index in self.multi_index:
-            gamma_ = []
-            for d, i in enumerate(index):
-                match self.distribution[d]:
-                    case "uniform":
-                        gamma_.append(1 / (2 * i + 1))
-                    case "gaussian":
-                        gamma_.append(factorial(i))
-            gamma.append(np.prod(gamma_))
-        return np.array(gamma)
+        arr_multi_index = np.array(self.multi_index, dtype=float)
+        #                                            ^^^^^^^^^^^
+        # Prevents numpy from truncating everything to integers
+
+        for d, dist in enumerate(self.distribution):
+            match dist:
+                case "uniform":
+                    arr_multi_index[:, d] = 1 / (2 * arr_multi_index[:, d] + 1)
+                case "gaussian":
+                    arr_multi_index[:, d] = factorial(arr_multi_index[:, d])
+
+        gamma = np.prod(arr_multi_index, axis=1)
+
+        return gamma
 
     def _normalize(self, x: npt.NDArray) -> npt.NDArray:
         """Normalize data depending on the distribution.
@@ -315,6 +317,8 @@ class PolyChaosExpansion():
         x_norm : ndarray (nx, dim) 
         """
         x_norm = np.array(x, copy=True, dtype=float)
+        #                               ^^^^^^^^^^^
+        # Prevents numpy from truncating everything to integers
 
         for d, dist in enumerate(self.distribution):
             match dist:
@@ -341,6 +345,8 @@ class PolyChaosExpansion():
         x_denorm : ndarray (nx, dim) 
         """
         x_denorm = np.array(x, copy=True, dtype=float)
+        #                                 ^^^^^^^^^^^
+        # Prevents numpy from truncating everything to integers
 
         for d, dist in enumerate(self.distribution):
             match dist:
