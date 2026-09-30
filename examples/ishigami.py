@@ -1,13 +1,11 @@
 from src.polychaos import PolyChaosExpansion
+from src.polychaos.test import ishigami
 
 import matplotlib.pyplot as plt
 import numpy as np
-np.random.seed(0)
 
-def ishigami(x):
-    x1, x2, x3 = x[:, 0], x[:, 1], x[:, 2]
-    ishi = np.sin(x1) + 7 * np.sin(x2) ** 2 + 0.1 * x3 ** 4 * np.sin(x1)
-    return ishi.reshape(-1, 1)
+
+np.random.seed(0)
 
 # Source:
 # https://uqtestfuns.readthedocs.io/en/latest/test-functions/ishigami.html
