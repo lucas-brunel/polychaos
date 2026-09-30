@@ -4,18 +4,11 @@ Example extracted from https://www.sfu.ca/~ssurjano/branin.html
 """
 
 from src.polychaos import PolyChaosExpansion
+from src.polychaos.test import branin
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-def branin(x):
-    x1 = x[:, 0]
-    x2 = x[:, 1]
-    return (
-        (x2 - 5.1 * x1 ** 2 / (4 * np.pi ** 2) + 5 * x1 / np.pi - 6) ** 2
-        + 10 * (1 - 1 / (8 * np.pi)) * np.cos(x1)
-        + 10
-    )
 
 # Input domain and visualization grid
 

@@ -1,0 +1,14 @@
+{
+    "version": 1,
+    "project": "polychaos",
+    "project_url": "https://github.com/lucas-brunel/lulupy",
+    "repo": ".",
+    "repo_subdir": "",
+    "environment_type": "virtualenv",
+    "env_dir": ".asv/env",
+    "results_dir": ".asv/results",
+    "html_dir": ".asv/html",
+    "build_command": [
+        "python -m pip wheel --no-deps -w {build_cache_dir} {build_dir}"
+    ]
+}

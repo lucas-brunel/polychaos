@@ -7,6 +7,7 @@ import numpy.typing as npt
 from scipy.special import hermitenorm, legendre, factorial
 from scipy.linalg import lstsq
 
+
 class PolyChaosExpansion():
     """Polynomial Chaos Expansion [1]_ ,[2]_.
 
